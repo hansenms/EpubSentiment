@@ -4,16 +4,59 @@ using HtmlAgilityPack;
 using VersOne.Epub;
 using Microsoft.ProjectOxford.Text.Core.Exceptions;
 using Microsoft.ProjectOxford.Text.Sentiment;
+using System.Text.RegularExpressions;
+
 
 namespace EpubSentiment
 {
     class Program
     {
+        
+        static double GetChapterScore(EpubChapter chapter)
+        {
+            string chapterText = GetChapterText(chapter);
+            //chapterText = chapterText.Replace(System.Environment.NewLine, " ");
+            chapterText = Regex.Replace(chapterText, @"\r\n?|\n", " ");
+            string[] sentences = Regex.Split(chapterText, @"(?<=[\.!\?])\s+");
 
-        static void AppendChapter(ref SentimentRequest request, EpubChapter chapter)
+            foreach (string sentence in sentences)
+            {
+                Console.WriteLine(sentence);
+            }
+
+            return 0.0;
+        }
+
+  
+        static string GetChapterText(EpubChapter chapter)
         {
             HtmlDocument htmlDocument = new HtmlDocument();
             htmlDocument.LoadHtml(chapter.HtmlContent);
+
+            StringBuilder sb = new StringBuilder();
+
+            foreach (HtmlNode node in htmlDocument.DocumentNode.SelectNodes("//text()"))
+            {
+                sb.AppendLine(node.InnerText.Trim());
+            }
+
+            foreach (EpubChapter subChapter in chapter.SubChapters)
+            {
+
+                sb.AppendLine(GetChapterText(subChapter));
+            }
+
+            return sb.ToString();
+        }
+
+        static void AppendChapter(ref SentimentRequest request, EpubChapter chapter, string chunkIDPrefix = "CHUNKDOCUMENT")
+        {
+            Console.WriteLine("Processing chapter: " + chapter.Title);
+
+            HtmlDocument htmlDocument = new HtmlDocument();
+            htmlDocument.LoadHtml(chapter.HtmlContent);
+
+           // Console.WriteLine("Content: " + chapter.HtmlContent);
 
             StringBuilder sb = new StringBuilder();
 
@@ -38,14 +81,26 @@ namespace EpubSentiment
                 }
 
                 var testText = chapterText.Substring(offset, charsPerChunk);
-                string chunkID = "CHUNKDOCUMENT" + i;
+                string chunkID = chunkIDPrefix + "_" + i;
                 var doc = new SentimentDocument() { Id = chunkID, Text = testText, Language = "en" };
-
+                
                 request.Documents.Add(doc);
 
                 offset += charsPerChunk;
+
             }
 
+            
+            int subchapter = 0;
+            foreach (EpubChapter subChapter in chapter.SubChapters)
+            {
+                if (subchapter > 2)
+                {
+                    break;
+                }
+
+                AppendChapter(ref request, subChapter, chunkIDPrefix + "_" + subchapter++);
+            }
 
         }
 
@@ -73,17 +128,12 @@ namespace EpubSentiment
             int numChapters = 0;
             foreach (EpubChapter chapter in epubBook.Chapters)
             {
-
+                /*
                 var request = new SentimentRequest();
 
                 string chapterTitle = chapter.Title;
 
                 AppendChapter(ref request, chapter);
-
-                foreach (EpubChapter subChapter in chapter.SubChapters)
-                {
-                    AppendChapter(ref request, subChapter);
-                }
            
                 var client = new SentimentClient(apiKey);
                 var response = client.GetSentiment(request);
@@ -102,11 +152,14 @@ namespace EpubSentiment
                     numScores++;
                 }
 
-                score /= numScores;
+                if (numScores > 0) { 
+                    score /= numScores;
+                }
 
                 Console.WriteLine(numChapters + ": " + chapterTitle + ", score: " + score);
+                */
 
-                bookScore += score;
+                bookScore += GetChapterScore(chapter);
                 numChapters++;
             }
 
